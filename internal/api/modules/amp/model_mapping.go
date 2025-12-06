@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/util"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -71,6 +72,14 @@ func (r *DefaultModelMapper) MapModel(model string) string {
 		}
 	}
 
+	// Verify target model has available providers
+	providers := util.GetProviderName(model)
+	if len(providers) == 0 {
+		log.Debugf("amp model mapping: target model %s has no available providers, skipping mapping", model)
+		return ""
+	}
+
+	// Note: Detailed routing log is handled by logAmpRouting in fallback_handlers.go
 	return model
 }
 
