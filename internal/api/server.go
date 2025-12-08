@@ -520,6 +520,10 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PUT("/ws-auth", s.mgmt.PutWebsocketAuth)
 		mgmt.PATCH("/ws-auth", s.mgmt.PutWebsocketAuth)
 
+		mgmt.GET("/force-model-mappings", s.mgmt.GetForceModelMappings)
+		mgmt.PUT("/force-model-mappings", s.mgmt.PutForceModelMappings)
+		mgmt.PATCH("/force-model-mappings", s.mgmt.PutForceModelMappings)
+
 		mgmt.GET("/request-retry", s.mgmt.GetRequestRetry)
 		mgmt.PUT("/request-retry", s.mgmt.PutRequestRetry)
 		mgmt.PATCH("/request-retry", s.mgmt.PutRequestRetry)

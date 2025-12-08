@@ -151,6 +151,10 @@ type AmpCode struct {
 	// When Amp requests a model that isn't available locally, these mappings
 	// allow routing to an alternative model that IS available.
 	ModelMappings []AmpModelMapping `yaml:"model-mappings" json:"model-mappings"`
+
+	// ForceModelMappings when true, model mappings take precedence over local API keys.
+	// When false (default), local API keys are used first if available.
+	ForceModelMappings bool `yaml:"force-model-mappings" json:"force-model-mappings"`
 }
 
 // PayloadConfig defines default and override parameter rules applied to provider payloads.
