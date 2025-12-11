@@ -4,6 +4,7 @@ package chat_completions
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,15 +14,58 @@ import (
 // ConvertKiroResponseToOpenAI converts Kiro streaming response to OpenAI SSE format.
 // Handles Claude SSE events: content_block_start, content_block_delta, input_json_delta,
 // content_block_stop, message_delta, and message_stop.
+// Input may be in SSE format: "event: xxx\ndata: {...}" or raw JSON.
 func ConvertKiroResponseToOpenAI(ctx context.Context, model string, originalRequest, request, rawResponse []byte, param *any) []string {
-	root := gjson.ParseBytes(rawResponse)
+	raw := string(rawResponse)
+	var results []string
+
+	// Handle SSE format: extract JSON from "data: " lines
+	// Input format: "event: message_start\ndata: {...}"
+	lines := strings.Split(raw, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "data: ") {
+			jsonPart := strings.TrimPrefix(line, "data: ")
+			chunks := convertClaudeEventToOpenAI(jsonPart, model)
+			results = append(results, chunks...)
+		} else if strings.HasPrefix(line, "{") {
+			// Raw JSON (backward compatibility)
+			chunks := convertClaudeEventToOpenAI(line, model)
+			results = append(results, chunks...)
+		}
+	}
+
+	return results
+}
+
+// convertClaudeEventToOpenAI converts a single Claude JSON event to OpenAI format
+func convertClaudeEventToOpenAI(jsonStr string, model string) []string {
+	root := gjson.Parse(jsonStr)
 	var results []string
 
 	eventType := root.Get("type").String()
 
 	switch eventType {
 	case "message_start":
-		// Initial message event - could emit initial chunk if needed
+		// Initial message event - emit initial chunk with role
+		response := map[string]interface{}{
+			"id":      "chatcmpl-" + uuid.New().String()[:24],
+			"object":  "chat.completion.chunk",
+			"created": time.Now().Unix(),
+			"model":   model,
+			"choices": []map[string]interface{}{
+				{
+					"index": 0,
+					"delta": map[string]interface{}{
+						"role":    "assistant",
+						"content": "",
+					},
+					"finish_reason": nil,
+				},
+			},
+		}
+		result, _ := json.Marshal(response)
+		results = append(results, string(result))
 		return results
 
 	case "content_block_start":
@@ -127,7 +171,7 @@ func ConvertKiroResponseToOpenAI(ctx context.Context, model string, originalRequ
 		return results
 
 	case "message_delta":
-		// Final message delta with stop_reason
+		// Final message delta with stop_reason and usage
 		stopReason := root.Get("delta.stop_reason").String()
 		if stopReason != "" {
 			finishReason := "stop"
@@ -152,6 +196,19 @@ func ConvertKiroResponseToOpenAI(ctx context.Context, model string, originalRequ
 					},
 				},
 			}
+
+			// Extract and include usage information from message_delta event
+			usage := root.Get("usage")
+			if usage.Exists() {
+				inputTokens := usage.Get("input_tokens").Int()
+				outputTokens := usage.Get("output_tokens").Int()
+				response["usage"] = map[string]interface{}{
+					"prompt_tokens":     inputTokens,
+					"completion_tokens": outputTokens,
+					"total_tokens":      inputTokens + outputTokens,
+				}
+			}
+
 			result, _ := json.Marshal(response)
 			results = append(results, string(result))
 		}
