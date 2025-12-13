@@ -1,0 +1,36 @@
+services:
+  cli-proxy-api:
+    image: ghcr.io/linhlban150612/cliproxyapi:prod
+    container_name: cli-proxy-api-plus
+    env_file:
+      - .env
+    environment:
+      DEPLOY: production
+    ports:
+      - "29092:29092"
+      - "8085:8085"
+      - "1455:1455"
+      - "54545:54545"
+      - "51121:51121"
+      - "11451:11451"
+    volumes:
+      - ./config.yaml:/CLIProxyAPI/config.yaml
+      - ./auths:/root/.cli-proxy-api
+      - ./logs:/CLIProxyAPI/logs
+    restart: unless-stopped
+    networks:
+      - cli-network
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared-tunnel
+    env_file:
+      - .env
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    restart: unless-stopped
+    networks:
+      - cli-network
+
+networks:
+  cli-network:
+    driver: bridge

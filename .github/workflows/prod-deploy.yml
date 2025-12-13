@@ -1,0 +1,268 @@
+name: Production Deploy
+
+on:
+  push:
+    branches:
+      - prod
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/cliproxyapi
+
+jobs:
+  build:
+    name: Build and Push Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    outputs:
+      version: ${{ steps.build-info.outputs.version }}
+      commit: ${{ steps.build-info.outputs.commit }}
+      image-tag: ${{ steps.build-info.outputs.image-tag }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Cần để git describe hoạt động đúng
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Build Info
+        id: build-info
+        run: |
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+          COMMIT=$(git rev-parse --short HEAD)
+          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "commit=${COMMIT}" >> $GITHUB_OUTPUT
+          echo "date=${BUILD_DATE}" >> $GITHUB_OUTPUT
+          echo "image-tag=prod-${COMMIT}" >> $GITHUB_OUTPUT
+          
+          echo "📦 Build Info:"
+          echo "  Version: ${VERSION}"
+          echo "  Commit: ${COMMIT}"
+          echo "  Build Date: ${BUILD_DATE}"
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            VERSION=${{ steps.build-info.outputs.version }}
+            COMMIT=${{ steps.build-info.outputs.commit }}
+            BUILD_DATE=${{ steps.build-info.outputs.date }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:prod
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build-info.outputs.image-tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.title=CLIProxyAPIPlus
+            org.opencontainers.image.description=CLI Proxy API Plus
+            org.opencontainers.image.version=${{ steps.build-info.outputs.version }}
+            org.opencontainers.image.created=${{ steps.build-info.outputs.date }}
+            org.opencontainers.image.revision=${{ steps.build-info.outputs.commit }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Image Build Summary
+        run: |
+          echo "### 🐳 Docker Image Built Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image** | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:prod\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | \`${{ steps.build-info.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ steps.build-info.outputs.commit }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Date** | \`${{ steps.build-info.outputs.date }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Platform** | \`linux/amd64\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Go Version** | \`1.24\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Base Image** | \`alpine:3.22.0\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Available tags:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:prod\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build-info.outputs.image-tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+
+  deploy:
+    name: Deploy to Production Server
+    needs: build
+    runs-on: self-hosted
+    
+    steps:
+      - name: Check Runner Environment
+        run: |
+          echo "🖥️ Running on: $(hostname)"
+          echo "📁 Working directory: $(pwd)"
+          echo "👤 User: $(whoami)"
+          echo "🐋 Docker version: $(docker --version)"
+          echo "🔧 Docker Compose version: $(docker compose version)"
+
+      - name: Login to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          echo "✅ Logged in to GHCR"
+
+      - name: Pull Latest Image
+        run: |
+          echo "🔄 Pulling image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:prod"
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:prod
+          echo "✅ Image pulled successfully"
+
+      - name: Backup Current Version
+        working-directory: ~/cliproxyapi
+        continue-on-error: true
+        run: |
+          if docker ps -q -f name=cli-proxy-api-plus > /dev/null 2>&1; then
+            CURRENT_IMAGE=$(docker inspect cli-proxy-api-plus --format='{{.Config.Image}}' 2>/dev/null || echo "none")
+            if [ "$CURRENT_IMAGE" != "none" ]; then
+              echo "📦 Current image: $CURRENT_IMAGE"
+              echo "$CURRENT_IMAGE" > .last-deployed-image
+              docker tag $CURRENT_IMAGE backup-image:rollback 2>/dev/null || true
+            fi
+          else
+            echo "ℹ️ No existing container found"
+          fi
+
+      - name: Stop Old Containers
+        working-directory: ~/cliproxyapi
+        run: |
+          echo "⏹️ Stopping old containers..."
+          docker compose -f docker-compose.yml down || true
+          echo "✅ Old containers stopped"
+
+      - name: Start New Containers
+        working-directory: ~/cliproxyapi
+        run: |
+          echo "🚀 Starting new containers..."
+          docker compose -f docker-compose.yml up -d
+          echo "✅ Containers started"
+
+      - name: Wait for Service to Start
+        run: |
+          echo "⏳ Waiting for service to start..."
+          sleep 15
+
+      - name: Health Check
+        id: health-check
+        run: |
+          if docker ps | grep -q "cli-proxy-api-plus"; then
+            echo "✅ Container is running"
+            docker ps --filter name=cli-proxy-api-plus --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Container failed to start"
+            echo "status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Verify Service Health
+        continue-on-error: true
+        run: |
+          echo "🔍 Checking service endpoints..."
+          # Kiểm tra các port chính
+          for port in 29092 8085 1455 54545 51121 11451; do
+            if nc -zv localhost $port 2>/dev/null; then
+              echo "✅ Port $port is open"
+            else
+              echo "⚠️ Port $port is not responding"
+            fi
+          done
+          
+          # Thử health check endpoint nếu có
+          if curl -f http://localhost:29092/health 2>/dev/null; then
+            echo "✅ Service health check passed"
+          else
+            echo "⚠️ Health check endpoint not available (this may be normal)"
+          fi
+
+      - name: Container Logs (Last 50 lines)
+        if: always()
+        run: |
+          echo "📋 Recent container logs:"
+          docker logs cli-proxy-api-plus --tail 50 || echo "Could not retrieve logs"
+
+      - name: Cleanup Old Images
+        run: |
+          echo "🧹 Cleaning up old images..."
+          docker image prune -af --filter "until=48h" || true
+          echo "✅ Cleanup completed"
+
+      - name: Deployment Summary
+        if: success()
+        run: |
+          echo "### ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Server** | \`$(hostname)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image** | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:prod\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | \`${{ needs.build.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ needs.build.outputs.commit }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deploy Time** | \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Status** | 🟢 Running |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Service Ports:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Main: 29092" >> $GITHUB_STEP_SUMMARY
+          echo "- Additional: 8085, 1455, 54545, 51121, 11451" >> $GITHUB_STEP_SUMMARY
+
+      - name: Rollback on Failure
+        if: failure()
+        working-directory: ~/cliproxyapi
+        continue-on-error: true
+        run: |
+          echo "🔄 Attempting rollback..."
+          if [ -f .last-deployed-image ]; then
+            LAST_IMAGE=$(cat .last-deployed-image)
+            echo "Rolling back to: $LAST_IMAGE"
+            
+            # Stop failed containers
+            docker compose -f docker-compose.yml down || true
+            
+            # Restore backup image
+            if docker images | grep -q "backup-image.*rollback"; then
+              # Temporarily change docker-compose to use backup image
+              sed -i.bak "s|ghcr.io/router-for-me/cliproxyapi:prod|backup-image:rollback|g" docker-compose.yml
+              docker compose -f docker-compose.yml up -d
+              mv docker-compose.yml.bak docker-compose.yml
+              echo "✅ Rollback completed"
+            else
+              echo "⚠️ Backup image not found, attempting to pull last known good image"
+              docker pull $LAST_IMAGE || true
+            fi
+          else
+            echo "⚠️ No backup image information found"
+          fi
+
+      - name: Notify Failure
+        if: failure()
+        run: |
+          echo "### ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Server** | \`$(hostname)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Failed Commit** | \`${{ needs.build.outputs.commit }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Failed Version** | \`${{ needs.build.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Time** | \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action Required:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Check container logs above" >> $GITHUB_STEP_SUMMARY
+          echo "2. Verify server resources" >> $GITHUB_STEP_SUMMARY
+          echo "3. Check docker-compose.yml configuration" >> $GITHUB_STEP_SUMMARY
+          echo "4. Rollback has been attempted" >> $GITHUB_STEP_SUMMARY
