@@ -125,7 +125,7 @@ jobs:
           echo "✅ Image pulled successfully"
 
       - name: Backup Current Version
-        working-directory: ~/cliproxyapi
+        working-directory: /home/linh/cliproxyapi
         continue-on-error: true
         run: |
           if docker ps -q -f name=cli-proxy-api-plus > /dev/null 2>&1; then
@@ -140,14 +140,14 @@ jobs:
           fi
 
       - name: Stop Old Containers
-        working-directory: ~/cliproxyapi
+        working-directory: /home/linh/cliproxyapi
         run: |
           echo "⏹️ Stopping old containers..."
           docker compose -f docker-compose.yml down || true
           echo "✅ Old containers stopped"
 
       - name: Start New Containers
-        working-directory: ~/cliproxyapi
+        working-directory: /home/linh/cliproxyapi
         run: |
           echo "🚀 Starting new containers..."
           docker compose -f docker-compose.yml up -d
@@ -223,7 +223,7 @@ jobs:
 
       - name: Rollback on Failure
         if: failure()
-        working-directory: ~/cliproxyapi
+        working-directory: /home/linh/cliproxyapi
         continue-on-error: true
         run: |
           echo "🔄 Attempting rollback..."
