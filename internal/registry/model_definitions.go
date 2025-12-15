@@ -648,10 +648,11 @@ func GetIFlowModels() []*ModelInfo {
 		{ID: "glm-4.6", DisplayName: "GLM-4.6", Description: "Zhipu GLM 4.6 general model", Created: 1759190400},
 		{ID: "kimi-k2", DisplayName: "Kimi-K2", Description: "Moonshot Kimi K2 general model", Created: 1752192000},
 		{ID: "kimi-k2-thinking", DisplayName: "Kimi-K2-Thinking", Description: "Moonshot Kimi K2 thinking model", Created: 1762387200, Thinking: &ThinkingSupport{Levels: []string{"low", "medium", "high"}}},
-		{ID: "deepseek-v3.2-chat", DisplayName: "DeepSeek-V3.2", Description: "DeepSeek V3.2", Created: 1764576000},
+		{ID: "deepseek-v3.2-chat", DisplayName: "DeepSeek-V3.2", Description: "DeepSeek V3.2 Chat", Created: 1764576000},
+		{ID: "deepseek-v3.2-reasoner", DisplayName: "DeepSeek-V3.2", Description: "DeepSeek V3.2 Reasoner", Created: 1764576000},
 		{ID: "deepseek-v3.2", DisplayName: "DeepSeek-V3.2-Exp", Description: "DeepSeek V3.2 experimental", Created: 1759104000},
 		{ID: "deepseek-v3.1", DisplayName: "DeepSeek-V3.1-Terminus", Description: "DeepSeek V3.1 Terminus", Created: 1756339200},
-		{ID: "deepseek-r1", DisplayName: "DeepSeek-R1", Description: "DeepSeek reasoning model R1", Created: 1737331200, Thinking: &ThinkingSupport{Levels: []string{"low", "medium", "high"}}},
+		{ID: "deepseek-r1", DisplayName: "DeepSeek-R1", Description: "DeepSeek reasoning model R1", Created: 1737331200},
 		{ID: "deepseek-v3", DisplayName: "DeepSeek-V3-671B", Description: "DeepSeek V3 671B", Created: 1734307200},
 		{ID: "qwen3-32b", DisplayName: "Qwen3-32B", Description: "Qwen3 32B", Created: 1747094400},
 		{ID: "qwen3-235b-a22b-thinking-2507", DisplayName: "Qwen3-235B-A22B-Thinking", Description: "Qwen3 235B A22B Thinking (2507)", Created: 1753401600, Thinking: &ThinkingSupport{Levels: []string{"low", "medium", "high"}}},
@@ -895,6 +896,7 @@ func GetKiroModels() []*ModelInfo {
 			Description:         "Claude Opus 4.5 via Kiro (2.2x credit)",
 			ContextLength:       200000,
 			MaxCompletionTokens: 64000,
+			Thinking:            &ThinkingSupport{Min: 1024, Max: 32000, ZeroAllowed: true, DynamicAllowed: true},
 		},
 		{
 			ID:                  "kiro-claude-sonnet-4-5",
@@ -906,6 +908,7 @@ func GetKiroModels() []*ModelInfo {
 			Description:         "Claude Sonnet 4.5 via Kiro (1.3x credit)",
 			ContextLength:       200000,
 			MaxCompletionTokens: 64000,
+			Thinking:            &ThinkingSupport{Min: 1024, Max: 32000, ZeroAllowed: true, DynamicAllowed: true},
 		},
 		{
 			ID:                  "kiro-claude-sonnet-4",
@@ -917,6 +920,7 @@ func GetKiroModels() []*ModelInfo {
 			Description:         "Claude Sonnet 4 via Kiro (1.3x credit)",
 			ContextLength:       200000,
 			MaxCompletionTokens: 64000,
+			Thinking:            &ThinkingSupport{Min: 1024, Max: 32000, ZeroAllowed: true, DynamicAllowed: true},
 		},
 		{
 			ID:                  "kiro-claude-haiku-4-5",
@@ -928,6 +932,7 @@ func GetKiroModels() []*ModelInfo {
 			Description:         "Claude Haiku 4.5 via Kiro (0.4x credit)",
 			ContextLength:       200000,
 			MaxCompletionTokens: 64000,
+			Thinking:            &ThinkingSupport{Min: 1024, Max: 32000, ZeroAllowed: true, DynamicAllowed: true},
 		},
 		// --- Agentic Variants (Optimized for coding agents with chunked writes) ---
 		{
@@ -940,6 +945,7 @@ func GetKiroModels() []*ModelInfo {
 			Description:         "Claude Opus 4.5 optimized for coding agents (chunked writes)",
 			ContextLength:       200000,
 			MaxCompletionTokens: 64000,
+			Thinking:            &ThinkingSupport{Min: 1024, Max: 32000, ZeroAllowed: true, DynamicAllowed: true},
 		},
 		{
 			ID:                  "kiro-claude-sonnet-4-5-agentic",
@@ -951,6 +957,7 @@ func GetKiroModels() []*ModelInfo {
 			Description:         "Claude Sonnet 4.5 optimized for coding agents (chunked writes)",
 			ContextLength:       200000,
 			MaxCompletionTokens: 64000,
+			Thinking:            &ThinkingSupport{Min: 1024, Max: 32000, ZeroAllowed: true, DynamicAllowed: true},
 		},
 		{
 			ID:                  "kiro-claude-sonnet-4-agentic",
@@ -962,6 +969,7 @@ func GetKiroModels() []*ModelInfo {
 			Description:         "Claude Sonnet 4 optimized for coding agents (chunked writes)",
 			ContextLength:       200000,
 			MaxCompletionTokens: 64000,
+			Thinking:            &ThinkingSupport{Min: 1024, Max: 32000, ZeroAllowed: true, DynamicAllowed: true},
 		},
 		{
 			ID:                  "kiro-claude-haiku-4-5-agentic",
@@ -973,6 +981,7 @@ func GetKiroModels() []*ModelInfo {
 			Description:         "Claude Haiku 4.5 optimized for coding agents (chunked writes)",
 			ContextLength:       200000,
 			MaxCompletionTokens: 64000,
+			Thinking:            &ThinkingSupport{Min: 1024, Max: 32000, ZeroAllowed: true, DynamicAllowed: true},
 		},
 	}
 }
