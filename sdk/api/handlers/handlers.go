@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/interfaces"
@@ -50,27 +49,6 @@ type BaseAPIHandler struct {
 
 	// Cfg holds the current application configuration.
 	Cfg *config.SDKConfig
-
-	// OpenAICompatProviders is a list of provider names for OpenAI compatibility.
-	openAICompatProviders []string
-	openAICompatMutex     sync.RWMutex
-}
-
-// GetOpenAICompatProviders safely returns a copy of the provider names
-func (h *BaseAPIHandler) GetOpenAICompatProviders() []string {
-	h.openAICompatMutex.RLock()
-	defer h.openAICompatMutex.RUnlock()
-	result := make([]string, len(h.openAICompatProviders))
-	copy(result, h.openAICompatProviders)
-	return result
-}
-
-// SetOpenAICompatProviders safely sets the provider names
-func (h *BaseAPIHandler) SetOpenAICompatProviders(providers []string) {
-	h.openAICompatMutex.Lock()
-	defer h.openAICompatMutex.Unlock()
-	h.openAICompatProviders = make([]string, len(providers))
-	copy(h.openAICompatProviders, providers)
 }
 
 // NewBaseAPIHandlers creates a new API handlers instance.
@@ -82,12 +60,11 @@ func (h *BaseAPIHandler) SetOpenAICompatProviders(providers []string) {
 //
 // Returns:
 //   - *BaseAPIHandler: A new API handlers instance
-func NewBaseAPIHandlers(cfg *config.SDKConfig, authManager *coreauth.Manager, openAICompatProviders []string) *BaseAPIHandler {
+func NewBaseAPIHandlers(cfg *config.SDKConfig, authManager *coreauth.Manager) *BaseAPIHandler {
 	h := &BaseAPIHandler{
 		Cfg:         cfg,
 		AuthManager: authManager,
 	}
-	h.SetOpenAICompatProviders(openAICompatProviders)
 	return h
 }
 
@@ -362,30 +339,19 @@ func (h *BaseAPIHandler) getRequestDetails(modelName string) (providers []string
 	// Resolve "auto" model to an actual available model first
 	resolvedModelName := util.ResolveAutoModel(modelName)
 
-	providerName, extractedModelName, isDynamic := h.parseDynamicModel(resolvedModelName)
-
-	targetModelName := resolvedModelName
-	if isDynamic {
-		targetModelName = extractedModelName
-	}
-
 	// Normalize the model name to handle dynamic thinking suffixes before determining the provider.
-	normalizedModel, metadata = normalizeModelMetadata(targetModelName)
+	normalizedModel, metadata = normalizeModelMetadata(resolvedModelName)
 
-	if isDynamic {
-		providers = []string{providerName}
-	} else {
-		// For non-dynamic models, use the normalizedModel to get the provider name.
-		providers = util.GetProviderName(normalizedModel)
-		if len(providers) == 0 && metadata != nil {
-			if originalRaw, ok := metadata[util.ThinkingOriginalModelMetadataKey]; ok {
-				if originalModel, okStr := originalRaw.(string); okStr {
-					originalModel = strings.TrimSpace(originalModel)
-					if originalModel != "" && !strings.EqualFold(originalModel, normalizedModel) {
-						if altProviders := util.GetProviderName(originalModel); len(altProviders) > 0 {
-							providers = altProviders
-							normalizedModel = originalModel
-						}
+	// Use the normalizedModel to get the provider name.
+	providers = util.GetProviderName(normalizedModel)
+	if len(providers) == 0 && metadata != nil {
+		if originalRaw, ok := metadata[util.ThinkingOriginalModelMetadataKey]; ok {
+			if originalModel, okStr := originalRaw.(string); okStr {
+				originalModel = strings.TrimSpace(originalModel)
+				if originalModel != "" && !strings.EqualFold(originalModel, normalizedModel) {
+					if altProviders := util.GetProviderName(originalModel); len(altProviders) > 0 {
+						providers = altProviders
+						normalizedModel = originalModel
 					}
 				}
 			}
@@ -401,30 +367,6 @@ func (h *BaseAPIHandler) getRequestDetails(modelName string) (providers []string
 	// So, normalizedModel is already correctly set at this point.
 
 	return providers, normalizedModel, metadata, nil
-}
-
-func (h *BaseAPIHandler) parseDynamicModel(modelName string) (providerName, model string, isDynamic bool) {
-	var providerPart, modelPart string
-	for _, sep := range []string{"://"} {
-		if parts := strings.SplitN(modelName, sep, 2); len(parts) == 2 {
-			providerPart = parts[0]
-			modelPart = parts[1]
-			break
-		}
-	}
-
-	if providerPart == "" {
-		return "", modelName, false
-	}
-
-	// Check if the provider is a configured openai-compatibility provider
-	for _, pName := range h.GetOpenAICompatProviders() {
-		if pName == providerPart {
-			return providerPart, modelPart, true
-		}
-	}
-
-	return "", modelName, false
 }
 
 func cloneBytes(src []byte) []byte {
