@@ -38,3 +38,5 @@ GEMINI.md
 # macOS
 .DS_Store
 ._*
+
+data/pgstore/auths/*
