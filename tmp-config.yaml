@@ -1,0 +1,150 @@
+# Server port
+port: 29092
+# TLS settings for HTTPS. When enabled, the server listens with the provided certificate and key.
+tls:
+  enable: false
+  cert: ""
+  key: ""
+# Management API settings
+remote-management:
+# Whether to allow remote (non-localhost) management access.
+# When false, only localhost can access management endpoints (a key is still required).
+  allow-remote: true
+# Management key. If a plaintext value is provided here, it will be hashed on startup.
+# All management requests (even from localhost) require this key.
+# Leave empty to disable the Management API entirely (404 for all /v0/management routes).
+  secret-key: ""
+# Disable the bundled management control panel asset download and HTTP route when true.
+  disable-control-panel: false
+# Authentication directory (supports ~ for home directory)
+auth-dir: "/root/CLIProxyAPIPlus/data/pgstore/auths"
+# API keys for authentication
+api-keys:
+  - "linhlb"
+# API keys for authentication
+debug: true
+# Open OAuth URLs in incognito/private browser mode.
+# Useful when you want to login with a different account without logging out from your current session.
+# Default: false (but Kiro auth defaults to true for multi-account support)
+incognito-browser: true
+# When true, write application logs to rotating files instead of stdout
+logging-to-file: true
+# When false, disable in-memory usage statistics aggregation
+usage-statistics-enabled: true
+# Proxy URL. Supports socks5/http/https protocols. Example: socks5://user:pass@192.168.1.1:1080/
+proxy-url: ""
+# Number of times to retry a request. Retries will occur if the HTTP response code is 403, 408, 500, 502, 503, or 504.
+request-retry: 3
+# Maximum wait time in seconds for a cooled-down credential before triggering a retry.
+max-retry-interval: 30
+# Quota exceeded behavior
+quota-exceeded:
+  switch-project: true # Whether to automatically switch to another project when a quota is exceeded
+  switch-preview-model: true # Whether to automatically switch to a preview model when a quota is exceeded
+# When true, enable authentication for the WebSocket API (/v1/ws).
+ws-auth: false
+# Amp Integration
+ampcode:
+#   # Configure upstream URL for Amp CLI OAuth and management features
+  upstream-url: "https://ampcode.com"
+#   # Optional: Override API key for Amp upstream (otherwise uses env or file)
+  upstream-api-key: "sgamp_user_01K60PS32EYHNNM2METS7MN7KM_ae5adbd211656d6893633c71ab4fb82f6598f93a6bee25d165f57569a3ccb1f2"
+#   # Restrict Amp management routes (/api/auth, /api/user, etc.) to localhost only (recommended)
+  restrict-management-to-localhost: false
+#   # Amp Model Mappings
+#   # Route unavailable Amp models to alternative models available in your local proxy.
+#   # Useful when Amp CLI requests models you don't have access to (e.g., Claude Opus 4.5)
+#   # but you have a similar model available (e.g., Claude Sonnet 4).
+  model-mappings:
+    - from: "gpt*"
+      to: "gpt-5.2-codex"
+    - from: "gemini-3*"
+      to: "gemini-3-pro-preview"
+    - from: "gemini-2*"
+      to: "gemini-3-flash-preview"
+    - from: "claude-haiku*"
+      to: "kiro-claude-haiku-4-5"
+    - from: "claude-sonnet*"
+      to: "kiro-claude-sonnet-4-5"
+    - from: "claude-opus*"
+      to: "kiro-claude-opus-4-5"
+  force-model-mappings: false
+# OpenAI compatibility providers
+openai-compatibility:
+  - name: "novita.ai"
+    base-url: "https://api.novita.ai/openai"
+    api-key-entries:
+      - api-key: "sk_mUcqkfppGZakiVM5ZJqGqKgXfZZIS1M8SXP8sDlxy8w"
+      - api-key: "sk_INAuM_XWGrDWUCuZLYexzwUnqBvK_xUYhvuPgH3WFQE"
+      - api-key: "sk_9dKRfrKs79Ps-ODJV4NO-oFqWrF35_ATWgj-UnrwGYw"
+      - api-key: "sk_dXocP-i3jOqAygUD-qkUfoD_Iyls4rEJQL3gF2UHmkc"
+      - api-key: "sk_w7SXZJUq0m1HBHeaNAyx6hzkl-EHx2rJogHoM9fSdS4"
+      - api-key: "sk_GH_xolwLUFfJI_73-tucUW2_EbxUrIlKzDKTRJZ47Hc"
+      - api-key: "sk_r6nksTb_aEmFaBxXUmMcg81QFnZ588qNUAxwPuxTvLE"
+      - api-key: "sk_yfeQyMiWiBtaHp0UmzPSQmUgQRePDk_4EQNQ_Jc1SE0"
+      - api-key: "sk_Mp90VAwrkBYMDfFLybPRn6bbKmVt2idfrMsKNlqr2N8"
+      - api-key: "sk_YbVer9XRGhZEe0hOJWmzT2M3fE1rKzwzoaZr4XyCHKI"
+      - api-key: "sk_O6CXeP7oZs9o5o7FqgR0yQwXoiKsHiGr0ffT7BO60NQ"
+      - api-key: "sk_xBEat8ejE3m8w3ShB4A2yWb5Xv0rLBN9TynWoMLc-l4"
+      - api-key: "sk_Sk901FqDtINboXEaVhimd8M81YyT0C1i98-zLYQvBf8"
+      - api-key: "sk_5YAY85HtZ6kbBFMJuOu8ZVa3wqDKSsx-Kk-xbxwuJkM"
+      - api-key: "sk_N15mro0CRNjNwS4yIT8jiJB-yJnehg_T56U2OVG5jDo"
+      - api-key: "sk_hVtP9qsS5JN71bIh90dMIIPkC1QBJQj6CWJGOXBJOMc"
+      - api-key: "sk_cbQ_zx8Zg4LATqcWDhGHwV3G0f8PxHpiGRIZDxk8PtI"
+      - api-key: "sk_Vw4S3CgdAWF5HdEAPjcL9f_uhHwD1RktASl6z3ktVP8"
+      - api-key: "sk_P9sZ80cCCNX06MGwfhCubOtyDn7YRX70VxgqraWaG1g"
+      - api-key: "sk_ZTT_QgTF4XDXRvnZ9w5bXZsHOlxZnmp4jjn56yLHZWU"
+      - api-key: "sk_X8EEUJbk3czYwxdtM6a5XTHqfaLjFIUctwwSLziuVYA"
+      - api-key: "sk_IRGBEivfkpB26hVoVajn6x_hCC7l-iOLyQIjqcGzpj4"
+      - api-key: "sk_p_rHh0fYzM1mJ_Q7v-Z0yIuj8w2THrcapX2qIkQ0QZU"
+      - api-key: "sk_mP55LuGu2Q4LbDn_psVIw6zAEx4e0FNCRWQPqkM3Mz8"
+      - api-key: "sk_LCNP6NAw7caqKijWTVdCl7Pq9En2S4p1osarwfh89fQ"
+      - api-key: "sk_o5SuQP7vitOSqnsqUiIoheIHKmTbPXfTN5kbF8wP9vA"
+      - api-key: "sk_gUHK24lcTbw8OnpNBf8oZYHxcd2jMVIXuxLKV0JWqMU"
+      - api-key: "sk_nqxfSfook12jG_2-nMCoDs-gxDmIo9HF4kH2MrMCGYE"
+      - api-key: "sk_VX2340ax4gJvYm56oKDRM_ROgSS0u91Wc2UDvnJq124"
+      - api-key: "sk_MRYUT4B0uQblP2r4EfFjRgdUYCnTIHab6hN1IBAhsJU"
+      - api-key: "sk_uw2t1gZvYpuW8xLW3ZcEDIiNAZMqxgfhV5nAzJoGP1U"
+      - api-key: "sk_ToQ_N8ctxrNcdM_O7Ded0pU5WX-SiaQpaMGA2nAJwxY"
+      - api-key: "sk_NX6gw2ywMDbqv355Bmug87Qv42GPQwGUuK04iXKFyIE"
+      - api-key: "sk_9FQWUtiA83Z-Bg0R_Wg1rMzlh7wnc-nv6eGOkeWUjD0"
+      - api-key: "sk_gEWvKrWIXt0dI-_DNHpkmZ8X4PtBGReaZ-u93hVVISc"
+      - api-key: "sk__mgj1TYBGD_6kUL535cpw7x8fQVXVgIWGlE_oHuWKhY"
+      - api-key: "sk_z9bOw0gUWcz9ixgHZnIUEOAxW3QyPTLxqCxr7h8fgDY"
+      - api-key: "sk_vqAg6nBK2WQPHxMRfoouj7oG-qCK4b6hXbguPw4qlPA"
+      - api-key: "sk_lBYOy4io6a2bI8_xKQ-y-g7TNWoEYNzaq4ZJClzAeTg"
+      - api-key: "sk__Ex3Z5m_RvvqqoAlf9ajMuyINoipKSLnXxlkP-2q3Ps"
+      - api-key: "sk_-vn7lzCAc0TU6b0OH4sEH9yiSjsGW5q_Wav6rCsVGL8"
+      - api-key: "sk_d5FFS6nYF9Z-UL3Mc2SCyY6tGCmq2lFTNLgLIm83EVw"
+      - api-key: "sk_HD7QdbwhfdexJfPu-ynQuQoSmJfP7qFxvToxEru85qY"
+      - api-key: "sk_GsI2AG3XmDGX18VFW_TmMM8aeB4_qF_NcDmKy7Lg1gA"
+      - api-key: "sk_3p6_J9ChFt3h4kqlSqcX2Gps52t0LtSFuCmBHeFmho8"
+      - api-key: "sk_2x_dVNIwpzuWanT0scWLkSnx5ZL3mj1z807slHJM0Fg"
+      - api-key: "sk_BUGPXK48M6pN_r_tVVRTqpYavR-deOi4eEK0hAX-q0g"
+      - api-key: "sk_u6rq_hy_OKQc5AoJimWn3wwzv0uGhTSNPQP4q4Rf3MY"
+      - api-key: "sk_IZiJwqo2XjR1NGYg9ZPlkF_AQni-o53zS91UpQfG8OA"
+      - api-key: "sk_GC4E-V2YNdZfQq9E9KpSG01bolCwUQKzd0NmaNaFRGY"
+      - api-key: "sk_mfRszCOlBjIjeKW9MZ3my9mBTTCryzNNIDh80X6fijk"
+      - api-key: "sk_LU8sbe2BFFSrUK9EgKcD_FCKdzsUON5AR0NTJbvpXkc"
+    models:
+      - name: "moonshotai/kimi-k2-thinking"
+        alias: "moonshotai/kimi-k2-thinking"
+  - name: "z.ai"
+    base-url: "https://api.z.ai/api/coding/paas/v4"
+    api-key-entries:
+      - api-key: "bc3f0dac21fe48e484591d5cc3597789.mZ24zLRHQdcUsXK2"
+    models:
+      - name: "glm-4.6"
+        alias: "glm-4.6"
+request-log: true
+host: ""
+disable-cooling: false
+kiro: []
+payload:
+  default: []
+  override:
+    - models:
+        - name: "kiro-claude-*"
+      params:
+        thinking.type: "enabled"
+        thinking.budget_tokens: 16000
