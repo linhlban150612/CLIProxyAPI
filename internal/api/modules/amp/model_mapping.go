@@ -26,114 +26,122 @@ type ModelMapper interface {
 
 // DefaultModelMapper implements ModelMapper with thread-safe mapping storage.
 type DefaultModelMapper struct {
-	overrides []config.AmpModelMapping
-	patterns  []*compiledPattern
-	mu        sync.RWMutex
-}
-
-type compiledPattern struct {
-	from    string
-	to      string
-	regex   *regexp.Regexp
-	isExact bool
+	mu       sync.RWMutex
+	mappings map[string]string // exact: from -> to (normalized lowercase keys)
+	regexps  []regexMapping    // regex rules evaluated in order
 }
 
 // NewModelMapper creates a new model mapper with the given initial mappings.
 func NewModelMapper(mappings []config.AmpModelMapping) *DefaultModelMapper {
 	m := &DefaultModelMapper{
-		overrides: mappings,
+		mappings: make(map[string]string),
+		regexps:  nil,
 	}
-	m.compilePatterns()
+	m.UpdateMappings(mappings)
 	return m
 }
 
 // MapModel checks if a mapping exists for the requested model and if the
 // target model has available local providers. Returns the mapped model name
 // or empty string if no valid mapping exists.
-func (r *DefaultModelMapper) MapModel(model string) string {
-	if r == nil || len(r.patterns) == 0 {
-		return model
+func (m *DefaultModelMapper) MapModel(requestedModel string) string {
+	if requestedModel == "" {
+		return ""
 	}
 
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
-	for _, cp := range r.patterns {
-		if cp.isExact {
-			if cp.from == model {
-				log.Debugf("amp model override: %s -> %s (exact match)", model, cp.to)
-				return cp.to
+	// Normalize the requested model for lookup
+	normalizedRequest := strings.ToLower(strings.TrimSpace(requestedModel))
+
+	// Check for direct mapping
+	targetModel, exists := m.mappings[normalizedRequest]
+	if !exists {
+		// Try regex mappings in order
+		base, _ := util.NormalizeThinkingModel(requestedModel)
+		for _, rm := range m.regexps {
+			if rm.re.MatchString(requestedModel) || (base != "" && rm.re.MatchString(base)) {
+				targetModel = rm.to
+				exists = true
+				break
 			}
-		} else if cp.regex != nil {
-			if cp.regex.MatchString(model) {
-				log.Debugf("amp model override: %s -> %s (pattern: %s)", model, cp.to, cp.from)
-				return cp.to
-			}
+		}
+		if !exists {
+			return ""
 		}
 	}
 
 	// Verify target model has available providers
-	normalizedTarget, _ := util.NormalizeThinkingModel(model)
+	normalizedTarget, _ := util.NormalizeThinkingModel(targetModel)
 	providers := util.GetProviderName(normalizedTarget)
 	if len(providers) == 0 {
-		log.Debugf("amp model mapping: target model %s has no available providers, skipping mapping", model)
+		log.Debugf("amp model mapping: target model %s has no available providers, skipping mapping", targetModel)
 		return ""
 	}
 
 	// Note: Detailed routing log is handled by logAmpRouting in fallback_handlers.go
-	return model
+	return targetModel
 }
 
 // UpdateMappings refreshes the mapping configuration from config.
 // This is called during initialization and on config hot-reload.
-func (r *DefaultModelMapper) UpdateMappings(mappings []config.AmpModelMapping) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.overrides = mappings
-	r.compilePatterns()
-	log.Debugf("amp model override: updated with %d rules", len(r.patterns))
-}
+func (m *DefaultModelMapper) UpdateMappings(mappings []config.AmpModelMapping) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-// compilePatterns pre-compiles wildcard patterns to regex for efficient matching.
-func (r *DefaultModelMapper) compilePatterns() {
-	r.patterns = make([]*compiledPattern, 0, len(r.overrides))
-	for _, override := range r.overrides {
-		cp := &compiledPattern{
-			from: override.From,
-			to:   override.To,
+	// Clear and rebuild mappings
+	m.mappings = make(map[string]string, len(mappings))
+	m.regexps = make([]regexMapping, 0, len(mappings))
+
+	for _, mapping := range mappings {
+		from := strings.TrimSpace(mapping.From)
+		to := strings.TrimSpace(mapping.To)
+
+		if from == "" || to == "" {
+			log.Warnf("amp model mapping: skipping invalid mapping (from=%q, to=%q)", from, to)
+			continue
 		}
 
-		if !strings.Contains(override.From, "*") {
-			cp.isExact = true
-		} else {
-			pattern := globToRegex(override.From)
-			regex, err := regexp.Compile(pattern)
+		if mapping.Regex {
+			// Compile case-insensitive regex; wrap with (?i) to match behavior of exact lookups
+			pattern := "(?i)" + from
+			re, err := regexp.Compile(pattern)
 			if err != nil {
-				log.Warnf("amp model override: invalid pattern %q, skipping: %v", override.From, err)
+				log.Warnf("amp model mapping: invalid regex %q: %v", from, err)
 				continue
 			}
-			cp.regex = regex
+			m.regexps = append(m.regexps, regexMapping{re: re, to: to})
+			log.Debugf("amp model regex mapping registered: /%s/ -> %s", from, to)
+		} else {
+			// Store with normalized lowercase key for case-insensitive lookup
+			normalizedFrom := strings.ToLower(from)
+			m.mappings[normalizedFrom] = to
+			log.Debugf("amp model mapping registered: %s -> %s", from, to)
 		}
-		r.patterns = append(r.patterns, cp)
+	}
+
+	if len(m.mappings) > 0 {
+		log.Infof("amp model mapping: loaded %d mapping(s)", len(m.mappings))
+	}
+	if n := len(m.regexps); n > 0 {
+		log.Infof("amp model mapping: loaded %d regex mapping(s)", n)
 	}
 }
 
-// globToRegex converts a glob pattern with * wildcards to a regex pattern.
-func globToRegex(glob string) string {
-	var result strings.Builder
-	result.WriteString("^")
-	for i := 0; i < len(glob); i++ {
-		c := glob[i]
-		switch c {
-		case '*':
-			result.WriteString(".*")
-		case '.', '+', '?', '[', ']', '(', ')', '{', '}', '^', '$', '|', '\\':
-			result.WriteByte('\\')
-			result.WriteByte(c)
-		default:
-			result.WriteByte(c)
-		}
+// GetMappings returns a copy of current mappings (for debugging/status).
+func (m *DefaultModelMapper) GetMappings() map[string]string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	result := make(map[string]string, len(m.mappings))
+	for k, v := range m.mappings {
+		result[k] = v
 	}
-	result.WriteString("$")
-	return result.String()
+	return result
+}
+
+type regexMapping struct {
+	re *regexp.Regexp
+	to string
 }
