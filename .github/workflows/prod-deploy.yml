@@ -454,3 +454,191 @@ jobs:
         run: |
           rm -f ~/.ssh/deploy_key
           echo "🧹 SSH key cleaned up"
+
+  deploy-server-gpts:
+    name: Deploy to GPTs Server
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SERVER_GPTS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DEPLOY_SERVER_GPTS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "✅ SSH key configured"
+
+      - name: Check Server Connection
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_SERVER_GPTS_USER }}@${{ secrets.DEPLOY_SERVER_GPTS_HOST }} "echo '🖥️ Connected to: \$(hostname)' && echo '📁 Working directory: \$(pwd)' && echo '👤 User: \$(whoami)' && echo '🐋 Docker version: \$(docker --version)' && echo '🔧 Docker Compose version: \$(docker compose version)'"
+
+      - name: Login to GHCR on Remote Server
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_SERVER_GPTS_USER }}@${{ secrets.DEPLOY_SERVER_GPTS_HOST }} "echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+          echo "✅ Logged in to GHCR on remote server"
+
+      - name: Pull Latest Image on Remote Server
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_SERVER_GPTS_USER }}@${{ secrets.DEPLOY_SERVER_GPTS_HOST }} "echo '🔄 Pulling image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:prod' && docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:prod && echo '✅ Image pulled successfully'"
+
+      - name: Backup Current Version on Remote Server
+        continue-on-error: true
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_SERVER_GPTS_USER }}@${{ secrets.DEPLOY_SERVER_GPTS_HOST }} << 'ENDSSH'
+            cd ${{ secrets.DEPLOY_SERVER_GPTS_WORKDIR || '/opt/cliproxyapi' }}
+            if docker ps -q -f name=cli-proxy-api-plus > /dev/null 2>&1; then
+              CURRENT_IMAGE=$(docker inspect cli-proxy-api-plus --format='{{.Config.Image}}' 2>/dev/null || echo "none")
+              if [ "$CURRENT_IMAGE" != "none" ]; then
+                echo "📦 Current image: $CURRENT_IMAGE"
+                echo "$CURRENT_IMAGE" > .last-deployed-image
+                docker tag $CURRENT_IMAGE backup-image:rollback-server-gpts 2>/dev/null || true
+              fi
+            else
+              echo "ℹ️ No existing container found"
+            fi
+          ENDSSH
+
+      - name: Stop Old Containers on Remote Server
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_SERVER_GPTS_USER }}@${{ secrets.DEPLOY_SERVER_GPTS_HOST }} << 'ENDSSH'
+            cd ${{ secrets.DEPLOY_SERVER_GPTS_WORKDIR || '/opt/cliproxyapi' }}
+            echo "⏹️ Stopping old containers..."
+            docker compose -f docker-compose.yml down || true
+            echo "✅ Old containers stopped"
+          ENDSSH
+
+      - name: Start New Containers on Remote Server
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_SERVER_GPTS_USER }}@${{ secrets.DEPLOY_SERVER_GPTS_HOST }} << 'ENDSSH'
+            cd ${{ secrets.DEPLOY_SERVER_GPTS_WORKDIR || '/opt/cliproxyapi' }}
+            echo "🚀 Starting new containers..."
+            docker compose -f docker-compose.yml up -d
+            echo "✅ Containers started"
+          ENDSSH
+
+      - name: Wait for Service to Start
+        run: |
+          echo "⏳ Waiting for service to start..."
+          sleep 15
+
+      - name: Health Check on Remote Server
+        id: health-check-server-gpts
+        run: |
+          HEALTH_STATUS=$(ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_SERVER_GPTS_USER }}@${{ secrets.DEPLOY_SERVER_GPTS_HOST }} << 'ENDSSH'
+            if docker ps | grep -q "cli-proxy-api-plus"; then
+              echo "✅ Container is running"
+              docker ps --filter name=cli-proxy-api-plus --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+              echo "success"
+            else
+              echo "❌ Container failed to start"
+              echo "failed"
+            fi
+          ENDSSH
+          )
+          
+          if echo "$HEALTH_STATUS" | grep -q "failed"; then
+            echo "status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "status=success" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Verify Service Health on Remote Server
+        continue-on-error: true
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_SERVER_GPTS_USER }}@${{ secrets.DEPLOY_SERVER_GPTS_HOST }} << 'ENDSSH'
+            echo "🔍 Checking service endpoints..."
+            for port in 29092 8085 1455 54545 51121 11451; do
+              if nc -zv localhost $port 2>/dev/null; then
+                echo "✅ Port $port is open"
+              else
+                echo "⚠️ Port $port is not responding"
+              fi
+            done
+            
+            if curl -f http://localhost:29092/health 2>/dev/null; then
+              echo "✅ Service health check passed"
+            else
+              echo "⚠️ Health check endpoint not available (this may be normal)"
+            fi
+          ENDSSH
+
+      - name: Container Logs on Remote Server
+        if: always()
+        run: |
+          echo "📋 Recent container logs from GPTs server:"
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_SERVER_GPTS_USER }}@${{ secrets.DEPLOY_SERVER_GPTS_HOST }} "docker logs cli-proxy-api-plus --tail 50 || echo 'Could not retrieve logs'"
+
+      - name: Cleanup Old Images on Remote Server
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_SERVER_GPTS_USER }}@${{ secrets.DEPLOY_SERVER_GPTS_HOST }} "echo '🧹 Cleaning up old images...' && docker image prune -af --filter 'until=48h' || true && echo '✅ Cleanup completed'"
+
+      - name: Deployment Summary for GPTs Server
+        if: success()
+        run: |
+          echo "### ✅ GPTs Server Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Server** | \`${{ secrets.DEPLOY_SERVER_GPTS_HOST }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image** | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:prod\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | \`${{ needs.build.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ needs.build.outputs.commit }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deploy Time** | \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Status** | 🟢 Running |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Service Ports:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Main: 29092" >> $GITHUB_STEP_SUMMARY
+          echo "- Additional: 8085, 1455, 54545, 51121, 11451" >> $GITHUB_STEP_SUMMARY
+
+      - name: Rollback on Failure for GPTs Server
+        if: failure()
+        continue-on-error: true
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_SERVER_GPTS_USER }}@${{ secrets.DEPLOY_SERVER_GPTS_HOST }} << 'ENDSSH'
+            cd ${{ secrets.DEPLOY_SERVER_GPTS_WORKDIR || '/opt/cliproxyapi' }}
+            echo "🔄 Attempting rollback..."
+            if [ -f .last-deployed-image ]; then
+              LAST_IMAGE=$(cat .last-deployed-image)
+              echo "Rolling back to: $LAST_IMAGE"
+              
+              docker compose -f docker-compose.yml down || true
+              
+              if docker images | grep -q "backup-image.*rollback-server-gpts"; then
+                sed -i.bak "s|ghcr.io/router-for-me/cliproxyapi:prod|backup-image:rollback-server-gpts|g" docker-compose.yml
+                docker compose -f docker-compose.yml up -d
+                mv docker-compose.yml.bak docker-compose.yml
+                echo "✅ Rollback completed"
+              else
+                echo "⚠️ Backup image not found, attempting to pull last known good image"
+                docker pull $LAST_IMAGE || true
+              fi
+            else
+              echo "⚠️ No backup image information found"
+            fi
+          ENDSSH
+
+      - name: Notify Failure for GPTs Server
+        if: failure()
+        run: |
+          echo "### ❌ GPTs Server Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Server** | \`${{ secrets.DEPLOY_SERVER_GPTS_HOST }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Failed Commit** | \`${{ needs.build.outputs.commit }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Failed Version** | \`${{ needs.build.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Time** | \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action Required:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Check container logs above" >> $GITHUB_STEP_SUMMARY
+          echo "2. Verify server resources and connectivity" >> $GITHUB_STEP_SUMMARY
+          echo "3. Check docker-compose.yml configuration on remote server" >> $GITHUB_STEP_SUMMARY
+          echo "4. Rollback has been attempted" >> $GITHUB_STEP_SUMMARY
+
+      - name: Cleanup SSH Key
+        if: always()
+        run: |
+          rm -f ~/.ssh/deploy_key
+          echo "🧹 SSH key cleaned up"
